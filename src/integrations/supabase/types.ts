@@ -353,6 +353,14 @@ export type Database = {
         Args: { _device: string; _fingerprint: string; _public_key: string }
         Returns: undefined
       }
+      register_device: {
+        Args: { _fingerprint: string; _name: string; _public_key: string }
+        Returns: Json
+      }
+      start_call: {
+        Args: { _conversation: string; _route?: string }
+        Returns: string
+      }
       set_ai_consent: {
         Args: { _conv: string; _granted: boolean }
         Returns: undefined
