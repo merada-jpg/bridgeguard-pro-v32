@@ -77,7 +77,7 @@ export async function ensureDevice(userId: string): Promise<StoredDevice> {
     deviceId: registered.id,
     keyVersion: registered.key_version,
     ...kp,
-    keyHistory: [{ keyVersion: data.key_version, privateKey: kp.privateKey, publicKeyB64: kp.publicKeyB64 }],
+    keyHistory: [{ keyVersion: registered.key_version, privateKey: kp.privateKey, publicKeyB64: kp.publicKeyB64 }],
   };
   await putLocalDevice(stored);
   return stored;
