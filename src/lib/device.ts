@@ -63,16 +63,19 @@ export async function ensureDevice(userId: string): Promise<StoredDevice> {
     await clearLocalDevice(userId); // revoked or mismatched → re-enrol
   }
   const kp = await generateDeviceKeyPair();
-  const { data, error } = await supabase
-    .from("devices")
-    .insert({ user_id: userId, name: deviceName(), public_identity_key: kp.publicKeyB64, fingerprint: kp.fingerprint })
-    .select("id, key_version")
-    .single();
-  if (error || !data) throw new Error("تعذّر تسجيل هذا الجهاز");
+  const { data, error } = await supabase.rpc("register_device", {
+    _name: deviceName(),
+    _public_key: kp.publicKeyB64,
+    _fingerprint: kp.fingerprint,
+  });
+  const registered = data as { id?: string; key_version?: number } | null;
+  if (error || !registered?.id || typeof registered.key_version !== "number") {
+    throw new Error("تعذّر تسجيل هذا الجهاز");
+  }
   const stored: StoredDevice = {
     userId,
-    deviceId: data.id,
-    keyVersion: data.key_version,
+    deviceId: registered.id,
+    keyVersion: registered.key_version,
     ...kp,
     keyHistory: [{ keyVersion: data.key_version, privateKey: kp.privateKey, publicKeyB64: kp.publicKeyB64 }],
   };
