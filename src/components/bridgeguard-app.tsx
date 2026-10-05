@@ -22,6 +22,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import { safeError } from "@/lib/validation";
 import { ensureDevice, getLocalDevice, rotateLocalKey } from "@/lib/device";
 import { encryptMessage, decryptMessage, type EnvelopeSet } from "@/lib/crypto";
@@ -303,7 +304,7 @@ function Messages({ user, device, guest }: { user: User | undefined; device: Dev
               deviceId: device.id,
               keyVersion: localDevice.keyVersion,
               privateKey: localDevice.privateKey,
-              keyHistory: localDevice.keyHistory,
+              ...(localDevice.keyHistory ? { keyHistory: localDevice.keyHistory } : {}),
             },
             key,
           ),
@@ -353,7 +354,7 @@ function Messages({ user, device, guest }: { user: User | undefined; device: Dev
         { deviceId: device.id, keyVersion: device.key_version, privateKey: localDevice.privateKey, publicKeyB64: localDevice.publicKeyB64 },
         recipients,
       );
-      const { error } = await supabase.from("messages").insert({ conversation_id: selected.id, sender_id: user.id, sender_device_id: device.id, alg: "ECDH-P256+HKDF-SHA256+AES-256-GCM", ciphertext: payload.ciphertext, iv: payload.iv, envelopes: payload.envelopes });
+      const { error } = await supabase.from("messages").insert({ conversation_id: selected.id, sender_id: user.id, sender_device_id: device.id, alg: "ECDH-P256+HKDF-SHA256+AES-256-GCM", ciphertext: payload.ciphertext, iv: payload.iv, envelopes: payload.envelopes as unknown as Json });
       if (error) throw error;
       setText("");
       await loadMessages(selected);
@@ -500,7 +501,7 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
 
   async function sendSignal(callId: string, kind: "offer" | "answer" | "candidate" | "hangup", payload: unknown) {
     if (!user) throw new Error("not authenticated");
-    const { error } = await supabase.from("call_signals").insert({ call_id: callId, sender_id: user.id, kind, payload });
+    const { error } = await supabase.from("call_signals").insert({ call_id: callId, sender_id: user.id, kind, payload: payload as Json });
     if (error) throw error;
   }
 
@@ -575,14 +576,14 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
       if (signal.sender_id === user?.id || !pcRef.current) return;
       try {
         if (signal.kind === "offer" && !initiator && !pc.currentRemoteDescription) {
-          await pc.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+          await pc.setRemoteDescription(signal.payload as unknown as RTCSessionDescriptionInit);
           for (const candidate of pendingCandidates.current) await pc.addIceCandidate(candidate);
           pendingCandidates.current = [];
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           await sendSignal(callId, "answer", answer);
         } else if (signal.kind === "answer" && initiator) {
-          await pc.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+          await pc.setRemoteDescription(signal.payload as unknown as RTCSessionDescriptionInit);
         } else if (signal.kind === "candidate") {
           if (pc.remoteDescription) await pc.addIceCandidate(signal.payload as RTCIceCandidateInit);
           else pendingCandidates.current.push(signal.payload as RTCIceCandidateInit);
@@ -697,3 +698,4 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
     <Card><h3 className="font-bold">حدود الأمان</h3><p className="mt-2 text-sm leading-7 text-muted-foreground">هذا ربط WebRTC فعلي أولي. لا يعني ذلك أن الاتصال "مجهول" أو "بدون خادم"، ولا أنه خضع لتدقيق أمني مستقل. TURN قد ينقل الوسائط عند تعذر الاتصال المباشر.</p></Card>
   </div>;
 }
+export default BridgeGuardApp;
