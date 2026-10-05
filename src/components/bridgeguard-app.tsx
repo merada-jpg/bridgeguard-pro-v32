@@ -9,7 +9,6 @@ import {
   KeyRound,
   LockKeyhole,
   MessageSquare,
-  MonitorSmartphone,
   Phone,
   Plus,
   RefreshCw,
@@ -20,7 +19,6 @@ import {
   UserPlus,
   Video,
   Wifi,
-  X,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeError } from "@/lib/validation";
@@ -135,7 +133,7 @@ function AuthScreen({ onGuest }: { onGuest: () => void }) {
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
             {[
-              ["<PRIVATE_PERSON>", "لا مفاتيح خاصة على الخادم", LockKeyhole],
+              ["هوية الجهاز", "لا مفاتيح خاصة على الخادم", LockKeyhole],
               ["WebCrypto", "ECDH + HKDF + AES-GCM", KeyRound],
               ["RLS", "تفويض على مستوى البيانات", ShieldCheck],
             ].map(([title, desc, Icon]) => (
@@ -449,7 +447,7 @@ function Calls() {
   </div>;
 }
 
-function Privacy({ user }: { user?: User }) {
+function Privacy() {
   const [status, setStatus] = useState("");
   const [confirm, setConfirm] = useState("");
   async function exportData() {
