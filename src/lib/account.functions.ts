@@ -40,6 +40,14 @@ export const deleteMyAccount = createServerFn({ method: "POST" })
     // Privileged client loaded only after the caller is authenticated, and it
     // only ever targets the caller's own userId (never client-supplied ids).
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Remove data owned by the caller. Conversations themselves are retained
+    // when other members still depend on them; this avoids deleting other users'
+    // ciphertext/messages merely because one account was removed.
+    const { data: ownedCalls } = await supabaseAdmin.from("calls").select("id").eq("initiator_id", userId);
+    if (ownedCalls?.length) {
+      await supabaseAdmin.from("call_signals").delete().in("call_id", ownedCalls.map((c) => c.id));
+      await supabaseAdmin.from("calls").delete().in("id", ownedCalls.map((c) => c.id));
+    }
     await supabaseAdmin.from("messages").delete().eq("sender_id", userId);
     await supabaseAdmin.from("ai_consents").delete().eq("user_id", userId);
     await supabaseAdmin.from("conversation_members").delete().eq("user_id", userId);
