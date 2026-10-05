@@ -66,7 +66,12 @@ async function deriveWrapKey(priv: CryptoKey, peerPubB64: string, salt: Uint8Arr
 
 export interface Recipient { deviceId: string; keyVersion: number; publicKeyB64: string }
 export interface Envelope { s: string; i: string; k: string }
-export interface EnvelopeSet { sv: number; r: Record<string, Envelope> }
+export interface EnvelopeSet {
+  sv: number;
+  /** Sender public identity key for this message epoch. Stored alongside ciphertext so later sender rotation does not invalidate old envelopes. */
+  spk?: string;
+  r: Record<string, Envelope>;
+}
 
 const infoFor = (sender: string, sv: number, rcpt: string) => `bridgepro-v32|${sender}:${sv}|${rcpt}`;
 
@@ -89,20 +94,41 @@ export async function encryptMessage(
     r[id] = { s: b64(salt), i: b64(wiv), k: b64(wrapped) };
   }
   raw.fill(0);
-  return { ciphertext: b64(ct), iv: b64(iv), envelopes: { sv: sender.keyVersion, r } satisfies EnvelopeSet };
+  return {
+    ciphertext: b64(ct),
+    iv: b64(iv),
+    envelopes: { sv: sender.keyVersion, spk: sender.publicKeyB64, r } satisfies EnvelopeSet,
+  };
 }
 
 export async function decryptMessage(
   msg: { ciphertext: string; iv: string; envelopes: EnvelopeSet; senderDeviceId: string },
-  me: { deviceId: string; keyVersion: number; privateKey: CryptoKey },
+  me: {
+    deviceId: string;
+    keyVersion: number;
+    privateKey: CryptoKey;
+    keyHistory?: Array<{ keyVersion: number; privateKey: CryptoKey; publicKeyB64?: string }>;
+  },
   senderPublicKeyB64: string,
 ): Promise<string> {
-  const id = `${me.deviceId}:${me.keyVersion}`;
-  const env = msg.envelopes?.r?.[id];
-  if (!env) throw new Error("no-envelope");
-  const wk = await deriveWrapKey(me.privateKey, senderPublicKeyB64, unb64(env.s), infoFor(msg.senderDeviceId, msg.envelopes.sv, id));
-  const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(env.i) }, wk, unb64(env.k));
-  const ck = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
-  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(msg.iv) }, ck, unb64(msg.ciphertext));
-  return dec.decode(pt);
+  const candidates = [
+    { keyVersion: me.keyVersion, privateKey: me.privateKey },
+    ...(me.keyHistory ?? []).filter((k) => k.keyVersion !== me.keyVersion).reverse(),
+  ];
+  const senderKey = msg.envelopes?.spk || senderPublicKeyB64;
+  for (const candidate of candidates) {
+    const id = `${me.deviceId}:${candidate.keyVersion}`;
+    const env = msg.envelopes?.r?.[id];
+    if (!env) continue;
+    try {
+      const wk = await deriveWrapKey(candidate.privateKey, senderKey, unb64(env.s), infoFor(msg.senderDeviceId, msg.envelopes.sv, id));
+      const raw = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(env.i) }, wk, unb64(env.k));
+      const ck = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+      const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(msg.iv) }, ck, unb64(msg.ciphertext));
+      return dec.decode(pt);
+    } catch {
+      // Try the next retained local key version.
+    }
+  }
+  throw new Error("no-envelope");
 }
