@@ -15,10 +15,17 @@ This repository now contains the BridgeGuard Pro v32 application shell plus the 
 - Device public keys and fingerprints; private keys remain client-side.
 - Browser WebCrypto primitives: ECDH P-256, HKDF-SHA-256, AES-256-GCM.
 - Server-side authorization and rate limiting for sensitive operations.
+- REDTEAM hardening pass: device registration is RPC-only/rate-limited; call creation/status changes are server-controlled; message sender epochs are bound to the registered device public key; profile writes use least-privilege column grants.
 - AI access requires explicit consent and server-side authorization.
 - WebRTC signaling/TURN configuration is server-side.
 - Arabic RTL dashboard with authentication, local guest mode, messages, security center, privacy export/delete, calls status, and explicit AI consent UI.
 - Local key history is retained across rotation for the current browser so newer message epochs can remain decryptable.
+
+### Verification status
+
+GitHub Actions CI is configured for typecheck, lint, unit tests, and build. The latest runs are currently queued on GitHub, so a green CI result has **not** yet been independently observed.
+
+Database authorization should also receive pgTAP/RLS regression tests before production. Database authorization still requires pgTAP/RLS regression tests before production. The repository should test every exposed table's grants and RLS allow/deny cases.
 
 ### Known limitations
 
