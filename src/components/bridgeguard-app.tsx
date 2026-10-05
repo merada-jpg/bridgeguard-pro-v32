@@ -294,7 +294,21 @@ function Messages({ user, device, guest }: { user?: User; device?: Device | null
       try {
         const key = keys.get(row.sender_device_id);
         if (!key || !device || !row.envelopes) throw new Error("no-key");
-        out.push({ ...row, text: await decryptMessage(row, { deviceId: device.id, keyVersion: device.key_version, privateKey: (await getLocalDevice(user.id))!.privateKey }, key) });
+        const localDevice = await getLocalDevice(user.id);
+        if (!localDevice) throw new Error("لا يوجد مفتاح محلي");
+        out.push({
+          ...row,
+          text: await decryptMessage(
+            row,
+            {
+              deviceId: device.id,
+              keyVersion: localDevice.keyVersion,
+              privateKey: localDevice.privateKey,
+              keyHistory: localDevice.keyHistory,
+            },
+            key,
+          ),
+        });
       } catch {
         out.push({ ...row, text: row.sender_id === user.id ? "رسالة مرسلة مشفّرة (تعذر فكها بهذا الإصدار من المفتاح)." : "رسالة مشفّرة غير قابلة للفك على هذا الجهاز." });
       }
@@ -332,8 +346,14 @@ function Messages({ user, device, guest }: { user?: User; device?: Device | null
       const ids = [...new Set((members ?? []).map((m) => m.user_id))];
       const { data: ds, error: deviceError } = await supabase.from("devices").select("id,user_id,key_version,public_identity_key").in("user_id", ids).is("revoked_at", null);
       if (deviceError) throw deviceError;
-      const recipients = (ds ?? []).filter((d) => d.id !== device.id).map((d) => ({ deviceId: d.id, keyVersion: d.key_version, publicKeyB64: d.public_identity_key }));
-      const payload = await encryptMessage(text.trim(), { deviceId: device.id, keyVersion: device.key_version, privateKey: (await getLocalDevice(user.id))!.privateKey }, recipients);
+      const recipients = (ds ?? []).map((d) => ({ deviceId: d.id, keyVersion: d.key_version, publicKeyB64: d.public_identity_key }));
+      const localDevice = await getLocalDevice(user.id);
+      if (!localDevice) throw new Error("لا يوجد مفتاح محلي");
+      const payload = await encryptMessage(
+        text.trim(),
+        { deviceId: device.id, keyVersion: device.key_version, privateKey: localDevice.privateKey, publicKeyB64: localDevice.public_identity_key },
+        recipients,
+      );
       const { error } = await supabase.from("messages").insert({ conversation_id: selected.id, sender_id: user.id, sender_device_id: device.id, alg: "ECDH-P256+HKDF-SHA256+AES-256-GCM", ciphertext: payload.ciphertext, iv: payload.iv, envelopes: payload.envelopes });
       if (error) throw error;
       setText("");
