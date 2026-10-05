@@ -60,6 +60,14 @@ export const getIceServers = createServerFn({ method: "POST" })
       { urls: "stun:stun.l.google.com:19302" },
     ];
     const url = process.env["TURN_URL"];
-    if (url) servers.push({ urls: url, username: process.env["TURN_USERNAME"], credential: process.env["TURN_CREDENTIAL"] });
+    if (url) {
+      const username = process.env["TURN_USERNAME"];
+      const credential = process.env["TURN_CREDENTIAL"];
+      servers.push({
+        urls: url,
+        ...(username ? { username } : {}),
+        ...(credential ? { credential } : {}),
+      });
+    }
     return { servers, turnConfigured: Boolean(url) };
   });
