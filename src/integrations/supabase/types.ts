@@ -357,6 +357,10 @@ export type Database = {
         Args: { _conv: string; _granted: boolean }
         Returns: undefined
       }
+      update_call_status: {
+        Args: { _call: string; _status: Database["public"]["Enums"]["call_status"] }
+        Returns: undefined
+      }
       shares_conversation: {
         Args: { _a: string; _b: string }
         Returns: boolean
