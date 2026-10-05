@@ -8,6 +8,12 @@ import { generateDeviceKeyPair } from "./crypto";
 const DB = "bridgepro-v32";
 const STORE = "device";
 
+interface StoredKey {
+  keyVersion: number;
+  privateKey: CryptoKey;
+  publicKeyB64: string;
+}
+
 interface StoredDevice {
   userId: string;
   deviceId: string;
@@ -15,6 +21,7 @@ interface StoredDevice {
   privateKey: CryptoKey;
   publicKeyB64: string;
   fingerprint: string;
+  keyHistory?: StoredKey[];
 }
 
 function db(): Promise<IDBDatabase> {
@@ -50,7 +57,9 @@ export async function ensureDevice(userId: string): Promise<StoredDevice> {
   const local = await getLocalDevice(userId);
   if (local) {
     const { data } = await supabase.from("devices").select("id, revoked_at, key_version, public_identity_key").eq("id", local.deviceId).maybeSingle();
-    if (data && !data.revoked_at && data.public_identity_key === local.publicKeyB64) return local;
+    if (data && !data.revoked_at && data.public_identity_key === local.publicKeyB64) {
+      return local.keyHistory?.length ? local : { ...local, keyHistory: [{ keyVersion: local.keyVersion, privateKey: local.privateKey, publicKeyB64: local.publicKeyB64 }] };
+    }
     await clearLocalDevice(userId); // revoked or mismatched → re-enrol
   }
   const kp = await generateDeviceKeyPair();
@@ -60,7 +69,13 @@ export async function ensureDevice(userId: string): Promise<StoredDevice> {
     .select("id, key_version")
     .single();
   if (error || !data) throw new Error("تعذّر تسجيل هذا الجهاز");
-  const stored: StoredDevice = { userId, deviceId: data.id, keyVersion: data.key_version, ...kp };
+  const stored: StoredDevice = {
+    userId,
+    deviceId: data.id,
+    keyVersion: data.key_version,
+    ...kp,
+    keyHistory: [{ keyVersion: data.key_version, privateKey: kp.privateKey, publicKeyB64: kp.publicKeyB64 }],
+  };
   await putLocalDevice(stored);
   return stored;
 }
@@ -71,5 +86,10 @@ export async function rotateLocalKey(userId: string) {
   const kp = await generateDeviceKeyPair();
   const { error } = await supabase.rpc("rotate_device_key", { _device: local.deviceId, _public_key: kp.publicKeyB64, _fingerprint: kp.fingerprint });
   if (error) throw new Error("تعذّر تدوير المفتاح");
-  await putLocalDevice({ ...local, ...kp, keyVersion: local.keyVersion + 1 });
+  const nextVersion = local.keyVersion + 1;
+  const history = [
+    ...(local.keyHistory ?? [{ keyVersion: local.keyVersion, privateKey: local.privateKey, publicKeyB64: local.publicKeyB64 }]),
+  ].slice(-4);
+  history.push({ keyVersion: nextVersion, privateKey: kp.privateKey, publicKeyB64: kp.publicKeyB64 });
+  await putLocalDevice({ ...local, ...kp, keyVersion: nextVersion, keyHistory: history });
 }
