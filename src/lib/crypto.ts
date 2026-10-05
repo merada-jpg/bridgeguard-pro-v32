@@ -56,7 +56,12 @@ async function deriveWrapKey(priv: CryptoKey, peerPubB64: string, salt: Uint8Arr
   const bits = await crypto.subtle.deriveBits({ name: "ECDH", public: await importPublic(peerPubB64) }, priv, 256);
   const hkdf = await crypto.subtle.importKey("raw", bits, "HKDF", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "HKDF", hash: "SHA-256", salt, info: enc.encode(info) },
+    {
+      name: "HKDF",
+      hash: "SHA-256",
+      salt: new Uint8Array(salt).buffer as ArrayBuffer,
+      info: new TextEncoder().encode(info).buffer as ArrayBuffer,
+    },
     hkdf,
     { name: "AES-GCM", length: 256 },
     false,
