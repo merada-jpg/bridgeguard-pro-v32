@@ -721,7 +721,7 @@ function Privacy({ user: _user }: { user: User | undefined }) {
   </div>;
 }
 
-function AI({ user }: { user?: User }) {
+function AI({ user }: { user: User | undefined }) {
   const [prompt, setPrompt] = useState("");
   const [answer, setAnswer] = useState("");
   const [consent, setConsent] = useState(false);
