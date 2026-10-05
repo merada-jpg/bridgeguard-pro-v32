@@ -499,7 +499,8 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
   }
 
   async function sendSignal(callId: string, kind: "offer" | "answer" | "candidate" | "hangup", payload: unknown) {
-    const { error } = await supabase.from("call_signals").insert({ call_id: callId, sender_id: user!.id, kind, payload });
+    if (!user) throw new Error("not authenticated");
+    const { error } = await supabase.from("call_signals").insert({ call_id: callId, sender_id: user.id, kind, payload });
     if (error) throw error;
   }
 
