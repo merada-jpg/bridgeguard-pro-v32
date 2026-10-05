@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Bot,
@@ -441,117 +441,181 @@ function Security({ user, device }: { user: User | undefined; device: Device | n
   </div>;
 }
 
-function Calls() {
-  return <div className="grid gap-4 md:grid-cols-2">
-    <Card><Phone className="size-6 text-primary" /><h2 className="mt-4 text-xl font-bold">المكالمات الآمنة</h2><p className="mt-2 text-sm leading-7 text-muted-foreground">WebRTC مع signaling على الخادم وTURN عند الحاجة. لا نقول "بدون خادم" لأن signaling وrelay قد يكونان ضروريين.</p><div className="mt-5 rounded-2xl bg-warning/10 p-4 text-sm leading-6 text-warning">واجهة المكالمات جاهزة كمرحلة المنتج، أما مسار WebRTC الكامل فيحتاج ربط واجهة الاتصال بإشارات call_signals واختبارًا فعليًا عبر شبكات مختلفة.</div></Card>
-    <Card><Video className="size-6 text-primary" /><h3 className="mt-4 font-bold">حالة المسار</h3><div className="mt-4 space-y-2 text-sm"><div className="flex justify-between rounded-xl bg-muted p-3"><span>Signaling</span><Badge tone="ok">Backend موجود</Badge></div><div className="flex justify-between rounded-xl bg-muted p-3"><span>STUN</span><Badge tone="ok">متاح</Badge></div><div className="flex justify-between rounded-xl bg-muted p-3"><span>TURN</span><Badge tone="warn">حسب البيئة</Badge></div></div></Card>
-  </div>;
-}
-
-function Privacy({ user: _user }: { user: User | undefined }) {
+function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selected, setSelected] = useState("");
+  const [calls, setCalls] = useState<Array<{ id: string; conversation_id: string; initiator_id: string; status: string; route: string | null; started_at: string }>>([]);
+  const [activeCall, setActiveCall] = useState<string | null>(null);
+  const [callState, setCallState] = useState("idle");
   const [status, setStatus] = useState("");
-  const [confirm, setConfirm] = useState("");
-  async function exportData() {
-    const r = await exportMyData();
-    if (r.ok) {
-      const blob = new Blob([JSON.stringify(r.data, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = "bridgeguard-export.json"; a.click(); URL.revokeObjectURL(url);
-      setStatus("تم تجهيز نسخة البيانات.");
-    } else setStatus(r.error);
-  }
-  async function deleteAccount() {
-    const r = await deleteMyAccount({ data: { confirm: "احذف حسابي" } });
-    setStatus(r.ok ? "تم طلب حذف الحساب. سجّل الخروج الآن." : r.error);
-  }
-  return <div className="space-y-4">
-    <Card><h2 className="text-xl font-bold">مركز الخصوصية</h2><p className="mt-2 text-sm leading-7 text-muted-foreground">البيانات المصدّرة تتضمن الرسائل كنص مشفّر. لا يستطيع الخادم فك محتواها بهذا التصميم.</p><Button onClick={() => void exportData()} className="mt-5 bg-primary text-primary-foreground">تصدير بياناتي</Button></Card>
-    <Card className="border-destructive/30"><h3 className="font-bold text-destructive">حذف الحساب</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">هذا الإجراء نهائي. اكتب العبارة المطلوبة ثم نفّذ الحذف.</p><input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="احذف حسابي" className="mt-4 w-full rounded-xl border bg-background px-3 py-3" /><Button disabled={confirm !== "احذف حسابي"} onClick={() => void deleteAccount()} className="mt-3 bg-destructive text-destructive-foreground">حذف الحساب نهائيًا</Button></Card>
-    {status && <div className="rounded-xl bg-muted p-3 text-sm">{status}</div>}
-  </div>;
-}
+  const [route, setRoute] = useState("unknown");
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const pendingCandidates = useRef<RTCIceCandidateInit[]>([]);
 
-function AI({ user }: { user?: User }) {
-  const [prompt, setPrompt] = useState("");
-  const [answer, setAnswer] = useState("");
-  const [consent, setConsent] = useState(false);
-  const [busy, setBusy] = useState(false);
-  async function run() {
-    if (!consent || !prompt.trim()) return;
-    setBusy(true); setAnswer("");
-    const r = await askAssistant({ data: { prompt: prompt.trim() } });
-    setAnswer(r.ok ? r.text : r.error);
-    setBusy(false);
-  }
-  return <Card>
-    <div className="flex items-start gap-3"><Bot className="mt-1 size-6 text-primary" /><div><h2 className="text-xl font-bold">المساعد الذكي</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">المساعد لا يحصل على رسائل المحادثات تلقائيًا. مشاركة سياق المحادثة يجب أن تكون اختيارية ومصرّحًا بها.</p></div></div>
-    <label className="mt-5 flex gap-3 rounded-2xl bg-warning/10 p-4 text-sm leading-6"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1 size-4" /> أوافق على إرسال النص الذي أكتبه هنا إلى مزود الذكاء الاصطناعي لمعالجة الطلب.</label>
-    <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="اكتب طلبك…" className="mt-4 min-h-32 w-full rounded-2xl border bg-background p-4" maxLength={2000} />
-    <Button onClick={() => void run()} disabled={!consent || busy} className="mt-3 bg-primary text-primary-foreground"><Bot className="size-4" /> {busy ? "جارٍ المعالجة…" : "إرسال للمساعد"}</Button>
-    {answer && <div className="mt-5 rounded-2xl bg-muted p-4 whitespace-pre-wrap text-sm leading-7">{answer}</div>}
-    {!user && <div className="mt-3 text-xs text-warning">يتطلب المساعد جلسة مصادق عليها.</div>}
-  </Card>;
-}
-
-export default function BridgeGuardApp() {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [device, setDevice] = useState<Device | null>(null);
-  const [guest, setGuest] = useState(false);
-  const [section, setSection] = useState<Section>("home");
-  const [booting, setBooting] = useState(true);
-
-  async function hydrate(nextUser: User | null) {
-    setUser(nextUser);
-    if (!nextUser) { setProfile(null); setDevice(null); return; }
-    const [{ data: p }, local] = await Promise.all([
-      supabase.from("profiles").select("id,display_name,handle").eq("id", nextUser.id).maybeSingle(),
-      getLocalDevice(nextUser.id).catch(() => undefined),
+  async function load() {
+    if (!user || guest) return;
+    const [{ data: cs }, { data: active }] = await Promise.all([
+      supabase.from("conversations").select("id,title,created_by,created_at").order("created_at", { ascending: false }),
+      supabase.from("calls").select("id,conversation_id,initiator_id,status,route,started_at").in("status", ["ringing", "active"]).order("started_at", { ascending: false }).limit(20),
     ]);
-    setProfile(p);
+    setConversations(cs ?? []);
+    setCalls(active ?? []);
+    if (!selected && cs?.[0]) setSelected(cs[0].id);
+  }
+
+  async function iceServers(): Promise<RTCIceServer[]> {
+    const r = await getIceServers();
+    return r.servers as RTCIceServer[];
+  }
+
+  async function cleanup(finalize = true) {
+    const callId = activeCall;
+    const channel = channelRef.current;
+    if (channel) await supabase.removeChannel(channel);
+    channelRef.current = null;
+    pcRef.current?.close();
+    pcRef.current = null;
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+    streamRef.current = null;
+    pendingCandidates.current = [];
+    setActiveCall(null);
+    setCallState("idle");
+    if (finalize && callId) {
+      await supabase.rpc("update_call_status", { _call: callId, _status: "ended" });
+    }
+    await load();
+  }
+
+  async function sendSignal(callId: string, kind: "offer" | "answer" | "candidate" | "hangup", payload: unknown) {
+    const { error } = await supabase.from("call_signals").insert({ call_id: callId, sender_id: user?.id, kind, payload });
+    if (error) throw error;
+  }
+
+  async function setupPeer(callId: string, initiator: boolean) {
+    const servers = await iceServers();
+    const pc = new RTCPeerConnection({ iceServers: servers });
+    pcRef.current = pc;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+    streamRef.current = stream;
+    for (const track of stream.getTracks()) pc.addTrack(track, stream);
+    pc.onicecandidate = (event) => {
+      if (event.candidate) void sendSignal(callId, "candidate", event.candidate.toJSON());
+    };
+    pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+      setCallState(state);
+      if (state === "connected") void supabase.rpc("update_call_status", { _call: callId, _status: "active" });
+      if (["failed", "closed", "disconnected"].includes(state)) void cleanup(true);
+    };
+    pc.ontrack = (event) => {
+      const audio = document.getElementById("bridgeguard-remote-audio") as HTMLAudioElement | null;
+      if (audio && event.streams[0]) audio.srcObject = event.streams[0];
+    };
+    setActiveCall(callId);
+    setCallState("connecting");
+
+    const channel = supabase.channel(`call:${callId}`);
+    channelRef.current = channel;
+    channel.on("postgres_changes", {
+      event: "INSERT",
+      schema: "public",
+      table: "call_signals",
+      filter: `call_id=eq.${callId}`,
+    }, async (payload) => {
+      const signal = payload.new as { sender_id: string; kind: string; payload: RTCSessionDescriptionInit & RTCIceCandidateInit };
+      if (signal.sender_id === user?.id || !pcRef.current) return;
+      try {
+        if (signal.kind === "offer" && !initiator) {
+          await pc.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+          for (const candidate of pendingCandidates.current) await pc.addIceCandidate(candidate);
+          pendingCandidates.current = [];
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          await sendSignal(callId, "answer", answer);
+        } else if (signal.kind === "answer" && initiator) {
+          await pc.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+        } else if (signal.kind === "candidate") {
+          if (pc.remoteDescription) await pc.addIceCandidate(signal.payload as RTCIceCandidateInit);
+          else pendingCandidates.current.push(signal.payload as RTCIceCandidateInit);
+        } else if (signal.kind === "hangup") {
+          await cleanup(false);
+        }
+      } catch (e) {
+        setStatus(safeError(e));
+      }
+    });
+    await channel.subscribe();
+
+    if (initiator) {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await sendSignal(callId, "offer", offer);
+    }
+  }
+
+  async function startCall() {
+    if (!user || !selected) return;
+    setStatus("");
     try {
-      const d = await ensureDevice(nextUser.id);
-      setDevice(d as unknown as Device);
-    } catch {
-      if (local) setDevice(local as unknown as Device);
+      const { data, error } = await supabase.rpc("start_call", { _conversation: selected, _route: "unknown" });
+      if (error) throw error;
+      await setupPeer(String(data), true);
+      await load();
+    } catch (e) {
+      setStatus(safeError(e));
+      await cleanup(false);
+    }
+  }
+
+  async function joinCall(callId: string) {
+    setStatus("");
+    try {
+      await setupPeer(callId, false);
+      await load();
+    } catch (e) {
+      setStatus(safeError(e));
+      await cleanup(false);
     }
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => hydrate(data.session?.user ? { id: data.session.user.id, email: data.session.user.email ?? null } : null)).finally(() => setBooting(false));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      void hydrate(session?.user ? { id: session.user.id, email: session.user.email ?? null } : null);
-    });
-    return () => listener.subscription.unsubscribe();
-  }, []);
+    void load();
+    return () => { void cleanup(false); };
+  }, [user?.id, guest]);
 
-  async function signOut() {
-    await supabase.auth.signOut({ scope: "global" });
-    setGuest(false);
-  }
+  if (guest) return <Card><Phone className="size-6 text-primary" /><h2 className="mt-4 text-xl font-bold">المكالمات — وضع الضيف</h2><p className="mt-2 text-sm leading-7 text-muted-foreground">المكالمات الحقيقية تتطلب جلسة مصادق عليها وWebRTC.</p></Card>;
 
-  const title = useMemo(() => ({ home: "نظرة عامة", messages: "الرسائل", calls: "المكالمات", security: "مركز الأمان", privacy: "الخصوصية", ai: "المساعد الذكي" }[section]), [section]);
-
-  if (booting) return <div className="grid min-h-screen place-items-center"><RefreshCw className="size-7 animate-spin text-primary" /></div>;
-  if (!user && !guest) return <AuthScreen onGuest={() => setGuest(true)} />;
-
-  return (
-    <div dir="rtl" className="min-h-screen md:flex">
-      <Sidebar section={section} setSection={setSection} profile={profile} onSignOut={() => void signOut()} />
-      <main className="min-w-0 flex-1 p-4 md:p-8">
-        <div className="mx-auto max-w-7xl">
-          <header className="mb-6 flex items-center justify-between gap-4">
-            <div><div className="text-xs text-muted-foreground">BridgeGuard Pro v32</div><h1 className="text-2xl font-black">{title}</h1></div>
-            <Badge tone="ok"><LockKeyhole className="size-3.5" /> {guest ? "محلي" : "محمي"}</Badge>
-          </header>
-          {section === "home" && <Overview profile={profile} device={device} guest={guest} onSection={setSection} />}
-          {section === "messages" && <Messages user={user ?? undefined} device={device} guest={guest} />}
-          {section === "calls" && <Calls />}
-          {section === "security" && <Security user={user ?? undefined} device={device} />}
-          {section === "privacy" && <Privacy user={user ?? undefined} />}
-          {section === "ai" && <AI user={user ?? undefined} />}
+  return <div className="space-y-4">
+    <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+      <Card>
+        <div className="flex items-center gap-3"><Phone className="size-6 text-primary" /><h2 className="text-xl font-bold">مكالمة WebRTC</h2></div>
+        <p className="mt-2 text-sm leading-7 text-muted-foreground">الإشارة تمر عبر الخادم، بينما الوسائط تستخدم WebRTC مباشرة أو عبر TURN حسب الشبكة.</p>
+        <label className="mt-4 block text-sm font-semibold">المحادثة</label>
+        <select value={selected} onChange={(e) => setSelected(e.target.value)} className="mt-2 w-full rounded-xl border bg-background px-3 py-3">
+          {conversations.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
+        </select>
+        <Button onClick={() => void startCall()} disabled={!selected || Boolean(activeCall)} className="mt-4 w-full bg-primary text-primary-foreground"><Video className="size-4" /> بدء المكالمة</Button>
+        {activeCall && <Button onClick={() => void cleanup(true)} className="mt-2 w-full border bg-background text-destructive">إنهاء المكالمة</Button>}
+        <div className="mt-4 rounded-2xl bg-muted p-4 text-sm">
+          <div className="flex justify-between"><span>الحالة</span><strong>{callState}</strong></div>
+          <div className="mt-2 flex justify-between"><span>المسار المعلن</span><strong>{route}</strong></div>
         </div>
-      </main>
+      </Card>
+      <Card>
+        <div className="flex items-center gap-3"><Wifi className="size-5 text-primary" /><h3 className="font-bold">المكالمات الجارية</h3></div>
+        <div className="mt-4 space-y-2">
+          {calls.map((call) => <div key={call.id} className="flex items-center justify-between gap-3 rounded-xl bg-muted p-3">
+            <div><div className="font-semibold">{conversations.find((c) => c.id === call.conversation_id)?.title ?? "محادثة"}</div><div className="text-xs text-muted-foreground">{call.initiator_id === user?.id ? "مكالمتك" : "مكالمة واردة"} · {call.route ?? "unknown"}</div></div>
+            {call.id === activeCall ? <Badge tone="ok">متصل</Badge> : <Button onClick={() => void joinCall(call.id)} className="border bg-background">انضمام</Button>}
+          </div>)}
+          {!calls.length && <p className="text-sm text-muted-foreground">لا توجد مكالمات جارية.</p>}
+        </div>
+      </Card>
     </div>
-  );
+    <audio id="bridgeguard-remote-audio" autoPlay playsInline className="hidden" />
+    {status && <div className="rounded-xl bg-warning/10 p-3 text-sm text-warning">{status}</div>}
+    <Card><h3 className="font-bold">حدود الأمان</h3><p className="mt-2 text-sm leading-7 text-muted-foreground">هذا ربط WebRTC فعلي أولي. لا يعني ذلك أن الاتصال "مجهول" أو "بدون خادم"، ولا أنه خضع لتدقيق أمني مستقل. TURN قد ينقل الوسائط عند تعذر الاتصال المباشر.</p></Card>
+  </div>;
 }
