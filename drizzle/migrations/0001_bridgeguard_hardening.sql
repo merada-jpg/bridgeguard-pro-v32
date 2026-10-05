@@ -1,23 +1,37 @@
 -- BridgeGuard Pro v32 hardening pass.
--- Tighten call mutation authorization so members cannot rewrite initiator/conversation/start time.
+-- Do not allow arbitrary member updates to call ownership, routing or timestamps.
 
-DROP POLICY IF EXISTS "calls: members update" ON public.calls;
+REVOKE UPDATE ON public.calls FROM authenticated;
 
-CREATE POLICY "calls: participants update status only" ON public.calls
-FOR UPDATE TO authenticated
-USING (
-  public.is_member(conversation_id, auth.uid())
-  AND (
-    initiator_id = auth.uid()
-    OR status IN ('ringing','active')
-  )
-)
-WITH CHECK (
-  public.is_member(conversation_id, auth.uid())
-  AND initiator_id = (SELECT c.initiator_id FROM public.calls c WHERE c.id = calls.id)
-  AND conversation_id = (SELECT c.conversation_id FROM public.calls c WHERE c.id = calls.id)
-  AND started_at = (SELECT c.started_at FROM public.calls c WHERE c.id = calls.id)
-);
+CREATE OR REPLACE FUNCTION public.update_call_status(_call uuid, _status public.call_status)
+RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  uid uuid := auth.uid();
+  current_status public.call_status;
+BEGIN
+  IF uid IS NULL THEN RAISE EXCEPTION 'not authenticated'; END IF;
 
--- A caller can end its own call; a participant can transition ringing/active
--- to a terminal state without changing ownership or conversation identity.
+  SELECT status INTO current_status
+  FROM public.calls
+  WHERE id = _call
+    AND public.is_member(conversation_id, uid);
+
+  IF current_status IS NULL THEN RAISE EXCEPTION 'not allowed'; END IF;
+
+  IF _status NOT IN ('active','ended','missed','failed') THEN
+    RAISE EXCEPTION 'invalid call transition';
+  END IF;
+
+  IF current_status = 'ended' THEN
+    RAISE EXCEPTION 'call already ended';
+  END IF;
+
+  UPDATE public.calls
+  SET status = _status,
+      ended_at = CASE WHEN _status IN ('ended','missed','failed') THEN now() ELSE ended_at END
+  WHERE id = _call;
+END
+$$;
+
+REVOKE ALL ON FUNCTION public.update_call_status(uuid, public.call_status) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.update_call_status(uuid, public.call_status) TO authenticated;
