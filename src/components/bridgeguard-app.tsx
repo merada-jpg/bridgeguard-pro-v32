@@ -517,8 +517,8 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
       });
       if (!selectedPair) return;
       const pair = selectedPair as RTCIceCandidatePairStats;
-      const local = stats.get(pair.localCandidateId) as RTCIceCandidateStats | undefined;
-      const remote = stats.get(pair.remoteCandidateId) as RTCIceCandidateStats | undefined;
+      const local = stats.get(pair.localCandidateId) as (RTCStats & { candidateType?: string }) | undefined;
+      const remote = stats.get(pair.remoteCandidateId) as (RTCStats & { candidateType?: string }) | undefined;
       if (local?.candidateType === "relay" || remote?.candidateType === "relay") setRoute("relay");
       else if (local || remote) setRoute("p2p");
     } catch {
