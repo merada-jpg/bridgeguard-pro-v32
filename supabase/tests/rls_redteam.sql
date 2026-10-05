@@ -4,7 +4,7 @@
 
 BEGIN;
 
-SELECT plan(16);
+SELECT plan(22);
 
 -- Every exposed application table must have RLS enabled.
 SELECT ok(c.relrowsecurity, 'RLS enabled on ' || c.relname)
