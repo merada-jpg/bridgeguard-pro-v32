@@ -28,6 +28,7 @@ import { ensureDevice, getLocalDevice, rotateLocalKey } from "@/lib/device";
 import { encryptMessage, decryptMessage, type EnvelopeSet } from "@/lib/crypto";
 import { askAssistant } from "@/lib/ai.functions";
 import { exportMyData, deleteMyAccount, getIceServers } from "@/lib/account.functions";
+import type { Json } from "@/integrations/supabase/types";
 
 type Section = "home" | "messages" | "calls" | "security" | "privacy" | "ai";
 type User = { id: string; email: string | null };
@@ -354,7 +355,7 @@ function Messages({ user, device, guest }: { user: User | undefined; device: Dev
         { deviceId: device.id, keyVersion: device.key_version, privateKey: localDevice.privateKey, publicKeyB64: localDevice.publicKeyB64 },
         recipients,
       );
-      const { error } = await supabase.from("messages").insert({ conversation_id: selected.id, sender_id: user.id, sender_device_id: device.id, alg: "ECDH-P256+HKDF-SHA256+AES-256-GCM", ciphertext: payload.ciphertext, iv: payload.iv, envelopes: payload.envelopes as unknown as Json });
+      const { error } = await supabase.from("messages").insert({ conversation_id: selected.id, sender_id: user.id, sender_device_id: device.id, alg: "ECDH-P256+HKDF-SHA256+AES-256-GCM", ciphertext: payload.ciphertext, iv: payload.iv, envelopes: payload.envelopes as unknown as Json as unknown as Json });
       if (error) throw error;
       setText("");
       await loadMessages(selected);
@@ -585,7 +586,7 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
         } else if (signal.kind === "answer" && initiator) {
           await pc.setRemoteDescription(signal.payload as unknown as RTCSessionDescriptionInit);
         } else if (signal.kind === "candidate") {
-          if (pc.remoteDescription) await pc.addIceCandidate(signal.payload as RTCIceCandidateInit);
+          if (pc.remoteDescription) await pc.addIceCandidate(signal.payload as unknown as RTCIceCandidateInit);
           else pendingCandidates.current.push(signal.payload as RTCIceCandidateInit);
         } else if (signal.kind === "hangup") {
           await cleanup(false);
@@ -608,7 +609,7 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
       for (const signal of history ?? []) {
         if (signal.sender_id === user?.id) continue;
         if (signal.kind === "offer") {
-          await pc.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+          await pc.setRemoteDescription(signal.payload as unknown as RTCSessionDescriptionInit);
         } else if (signal.kind === "candidate") {
           if (pc.remoteDescription) await pc.addIceCandidate(signal.payload as RTCIceCandidateInit);
           else pendingCandidates.current.push(signal.payload as RTCIceCandidateInit);
@@ -699,3 +700,94 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
   </div>;
 }
 export default BridgeGuardApp;
+
+
+export default function BridgeGuardApp() {
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [device, setDevice] = useState<Device | null>(null);
+  const [guest, setGuest] = useState(false);
+  const [section, setSection] = useState<Section>("home");
+  const [booting, setBooting] = useState(true);
+
+  async function hydrate(nextUser: User | null) {
+    setUser(nextUser);
+    if (!nextUser) {
+      setProfile(null);
+      setDevice(null);
+      return;
+    }
+    const [{ data: p }, local] = await Promise.all([
+      supabase.from("profiles").select("id,display_name,handle").eq("id", nextUser.id).maybeSingle(),
+      getLocalDevice(nextUser.id).catch(() => undefined),
+    ]);
+    setProfile(p);
+    try {
+      const d = await ensureDevice(nextUser.id);
+      setDevice(d as unknown as Device);
+    } catch {
+      if (local) setDevice(local as unknown as Device);
+    }
+  }
+
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data }) => hydrate(
+      data.session?.user
+        ? { id: data.session.user.id, email: data.session.user.email ?? null }
+        : null,
+    )).finally(() => setBooting(false));
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      void hydrate(session?.user
+        ? { id: session.user.id, email: session.user.email ?? null }
+        : null);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  async function signOut() {
+    await supabase.auth.signOut({ scope: "global" });
+    setGuest(false);
+  }
+
+  const title = useMemo(
+    () => ({
+      home: "نظرة عامة",
+      messages: "الرسائل",
+      calls: "المكالمات",
+      security: "مركز الأمان",
+      privacy: "الخصوصية",
+      ai: "المساعد الذكي",
+    }[section]),
+    [section],
+  );
+
+  if (booting) {
+    return <div className="grid min-h-screen place-items-center"><RefreshCw className="size-7 animate-spin text-primary" /></div>;
+  }
+
+  if (!user && !guest) return <AuthScreen onGuest={() => setGuest(true)} />;
+
+  return (
+    <div dir="rtl" className="min-h-screen md:flex">
+      <Sidebar section={section} setSection={setSection} profile={profile} onSignOut={() => void signOut()} />
+      <main className="min-w-0 flex-1 p-4 md:p-8">
+        <div className="mx-auto max-w-7xl">
+          <header className="mb-6 flex items-center justify-between gap-4">
+            <div>
+              <div className="text-xs text-muted-foreground">BridgeGuard Pro v32</div>
+              <h1 className="text-2xl font-black">{title}</h1>
+            </div>
+            <Badge tone="ok"><LockKeyhole className="size-3.5" /> {guest ? "محلي" : "محمي"}</Badge>
+          </header>
+          {section === "home" && <Overview profile={profile} device={device} guest={guest} onSection={setSection} />}
+          {section === "messages" && <Messages user={user ?? undefined} device={device} guest={guest} />}
+          {section === "calls" && <Calls user={user ?? undefined} guest={guest} />}
+          {section === "security" && <Security user={user ?? undefined} device={device} />}
+          {section === "privacy" && <Privacy user={user ?? undefined} />}
+          {section === "ai" && <AI user={user ?? undefined} />}
+        </div>
+      </main>
+    </div>
+  );
+}
