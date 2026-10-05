@@ -298,7 +298,7 @@ function Messages({ user, device, guest }: { user: User | undefined; device: Dev
         out.push({
           ...row,
           text: await decryptMessage(
-            row,
+            { ...row, senderDeviceId: row.sender_device_id },
             {
               deviceId: device.id,
               keyVersion: localDevice.keyVersion,
