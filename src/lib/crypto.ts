@@ -49,7 +49,7 @@ export async function fingerprintOf(publicKeyB64: string): Promise<string> {
 }
 
 async function importPublic(publicKeyB64: string) {
-  return crypto.subtle.importKey("spki", unb64(publicKeyB64), { name: "ECDH", namedCurve: "P-256" }, false, []);
+  return crypto.subtle.importKey("spki", unb64(publicKeyB64), { name: "ECDH", namedCurve: "P-256" }, false, []) as Promise<CryptoKey>;
 }
 
 async function deriveWrapKey(priv: CryptoKey, peerPubB64: string, salt: Uint8Array, info: string) {
@@ -75,7 +75,7 @@ export async function encryptMessage(
   sender: { deviceId: string; keyVersion: number; privateKey: CryptoKey },
   recipients: Recipient[],
 ) {
-  const contentKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
+  const contentKey = (await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"])) as CryptoKey;
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, contentKey, enc.encode(plaintext));
   const raw = new Uint8Array(await crypto.subtle.exportKey("raw", contentKey));
