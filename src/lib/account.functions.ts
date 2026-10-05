@@ -56,7 +56,7 @@ export const deleteMyAccount = createServerFn({ method: "POST" })
 export const getIceServers = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async () => {
-    const servers: { urls: string | string[]; username?: string; credential?: string }[] = [
+    const servers: Array<{ urls: string | string[]; username?: string; credential?: string }> = [
       { urls: "stun:stun.l.google.com:19302" },
     ];
     const url = process.env["TURN_URL"];
