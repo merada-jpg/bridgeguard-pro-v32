@@ -133,7 +133,7 @@ function AuthScreen({ onGuest }: { onGuest: () => void }) {
             منصة عربية للرسائل والمكالمات ومركز أمان واضح: مفاتيح الجهاز تبقى محليًا، والرسائل المخزنة على الخادم نص مشفّر فقط.
           </p>
           <div className="mt-8 grid gap-3 sm:grid-cols-3">
-            {[
+            {([
               ["هوية الجهاز", "لا مفاتيح خاصة على الخادم", LockKeyhole],
               ["WebCrypto", "ECDH + HKDF + AES-GCM", KeyRound],
               ["RLS", "تفويض على مستوى البيانات", ShieldCheck],
