@@ -22,7 +22,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import type { Json } from "@/integrations/supabase/types";
 import { safeError } from "@/lib/validation";
 import { ensureDevice, getLocalDevice, rotateLocalKey } from "@/lib/device";
 import { encryptMessage, decryptMessage, type EnvelopeSet } from "@/lib/crypto";
@@ -699,8 +698,50 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
     <Card><h3 className="font-bold">حدود الأمان</h3><p className="mt-2 text-sm leading-7 text-muted-foreground">هذا ربط WebRTC فعلي أولي. لا يعني ذلك أن الاتصال "مجهول" أو "بدون خادم"، ولا أنه خضع لتدقيق أمني مستقل. TURN قد ينقل الوسائط عند تعذر الاتصال المباشر.</p></Card>
   </div>;
 }
-export default BridgeGuardApp;
+function Privacy({ user: _user }: { user: User | undefined }) {
+  const [status, setStatus] = useState("");
+  const [confirm, setConfirm] = useState("");
+  async function exportData() {
+    const r = await exportMyData();
+    if (r.ok) {
+      const blob = new Blob([JSON.stringify(r.data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = "bridgeguard-export.json"; a.click(); URL.revokeObjectURL(url);
+      setStatus("تم تجهيز نسخة البيانات.");
+    } else setStatus(r.error);
+  }
+  async function deleteAccount() {
+    const r = await deleteMyAccount({ data: { confirm: "احذف حسابي" } });
+    setStatus(r.ok ? "تم طلب حذف الحساب. سجّل الخروج الآن." : r.error);
+  }
+  return <div className="space-y-4">
+    <Card><h2 className="text-xl font-bold">مركز الخصوصية</h2><p className="mt-2 text-sm leading-7 text-muted-foreground">البيانات المصدّرة تتضمن الرسائل كنص مشفّر. لا يستطيع الخادم فك محتواها بهذا التصميم.</p><Button onClick={() => void exportData()} className="mt-5 bg-primary text-primary-foreground">تصدير بياناتي</Button></Card>
+    <Card className="border-destructive/30"><h3 className="font-bold text-destructive">حذف الحساب</h3><p className="mt-2 text-sm leading-6 text-muted-foreground">هذا الإجراء نهائي. اكتب العبارة المطلوبة ثم نفّذ الحذف.</p><input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="احذف حسابي" className="mt-4 w-full rounded-xl border bg-background px-3 py-3" /><Button disabled={confirm !== "احذف حسابي"} onClick={() => void deleteAccount()} className="mt-3 bg-destructive text-destructive-foreground">حذف الحساب نهائيًا</Button></Card>
+    {status && <div className="rounded-xl bg-muted p-3 text-sm">{status}</div>}
+  </div>;
+}
 
+function AI({ user }: { user?: User }) {
+  const [prompt, setPrompt] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [consent, setConsent] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function run() {
+    if (!consent || !prompt.trim()) return;
+    setBusy(true); setAnswer("");
+    const r = await askAssistant({ data: { prompt: prompt.trim() } });
+    setAnswer(r.ok ? r.text : r.error);
+    setBusy(false);
+  }
+  return <Card>
+    <div className="flex items-start gap-3"><Bot className="mt-1 size-6 text-primary" /><div><h2 className="text-xl font-bold">المساعد الذكي</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">المساعد لا يحصل على رسائل المحادثات تلقائيًا. مشاركة سياق المحادثة يجب أن تكون اختيارية ومصرّحًا بها.</p></div></div>
+    <label className="mt-5 flex gap-3 rounded-2xl bg-warning/10 p-4 text-sm leading-6"><input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1 size-4" /> أوافق على إرسال النص الذي أكتبه هنا إلى مزود الذكاء الاصطناعي لمعالجة الطلب.</label>
+    <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="اكتب طلبك…" className="mt-4 min-h-32 w-full rounded-2xl border bg-background p-4" maxLength={2000} />
+    <Button onClick={() => void run()} disabled={!consent || busy} className="mt-3 bg-primary text-primary-foreground"><Bot className="size-4" /> {busy ? "جارٍ المعالجة…" : "إرسال للمساعد"}</Button>
+    {answer && <div className="mt-5 rounded-2xl bg-muted p-4 whitespace-pre-wrap text-sm leading-7">{answer}</div>}
+    {!user && <div className="mt-3 text-xs text-warning">يتطلب المساعد جلسة مصادق عليها.</div>}
+  </Card>;
+}
 
 export default function BridgeGuardApp() {
   const [user, setUser] = useState<User | null>(null);
