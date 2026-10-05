@@ -1,0 +1,136 @@
+@import "tailwindcss" source(none);
+@source "../src";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Bridge Pro v32 design system — "verifiable ink": deep ink surfaces,
+   mint signal colour for proven state, amber for unproven/attention. */
+
+@theme inline {
+  --font-sans: "IBM Plex Sans Arabic", system-ui, sans-serif;
+  --font-display: "Readex Pro", "IBM Plex Sans Arabic", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-ring-offset-background: var(--background);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--primary);
+  --color-chart-2: var(--warning);
+  --color-chart-3: var(--success);
+  --color-chart-4: var(--muted-foreground);
+  --color-chart-5: var(--destructive);
+}
+
+:root {
+  --radius: 0.75rem;
+  --background: oklch(0.165 0.022 252);
+  --foreground: oklch(0.96 0.008 240);
+  --card: oklch(0.205 0.026 252);
+  --card-foreground: oklch(0.96 0.008 240);
+  --popover: oklch(0.22 0.028 252);
+  --popover-foreground: oklch(0.96 0.008 240);
+  --primary: oklch(0.82 0.13 172);
+  --primary-foreground: oklch(0.18 0.03 200);
+  --secondary: oklch(0.27 0.03 252);
+  --secondary-foreground: oklch(0.94 0.01 240);
+  --muted: oklch(0.25 0.025 252);
+  --muted-foreground: oklch(0.76 0.025 245);
+  --accent: oklch(0.29 0.04 210);
+  --accent-foreground: oklch(0.96 0.008 240);
+  --destructive: oklch(0.68 0.19 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.8 0.15 150);
+  --success-foreground: oklch(0.18 0.04 150);
+  --warning: oklch(0.84 0.14 80);
+  --warning-foreground: oklch(0.2 0.04 80);
+  --border: oklch(0.32 0.03 252);
+  --input: oklch(0.34 0.03 252);
+  --ring: oklch(0.82 0.13 172);
+  --sidebar: oklch(0.185 0.024 252);
+  --sidebar-foreground: oklch(0.94 0.01 240);
+  --sidebar-primary: oklch(0.82 0.13 172);
+  --sidebar-primary-foreground: oklch(0.18 0.03 200);
+  --sidebar-accent: oklch(0.26 0.03 252);
+  --sidebar-accent-foreground: oklch(0.96 0.008 240);
+  --sidebar-border: oklch(0.3 0.03 252);
+  --sidebar-ring: oklch(0.82 0.13 172);
+
+  --gradient-signal: linear-gradient(135deg, oklch(0.82 0.13 172), oklch(0.74 0.12 215));
+  --gradient-ink: radial-gradient(1200px 600px at 85% -10%, oklch(0.32 0.07 200 / 0.55), transparent 60%),
+    radial-gradient(900px 500px at 0% 110%, oklch(0.3 0.06 260 / 0.5), transparent 60%);
+  --shadow-glow: 0 0 0 1px oklch(0.82 0.13 172 / 0.25), 0 20px 50px -20px oklch(0.82 0.13 172 / 0.35);
+  --shadow-card: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 12px 30px -18px oklch(0 0 0 / 0.6);
+}
+
+@layer base {
+  * { border-color: var(--color-border); }
+  html { color-scheme: dark; }
+  body {
+    background-color: var(--color-background);
+    background-image: var(--gradient-ink);
+    background-attachment: fixed;
+    color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3, h4 { font-family: var(--font-display); letter-spacing: -0.01em; }
+  :focus-visible { outline: 2px solid var(--color-ring); outline-offset: 2px; border-radius: 6px; }
+  ::selection { background: oklch(0.82 0.13 172 / 0.35); }
+}
+
+@utility surface {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-card);
+}
+@utility text-signal {
+  background-image: var(--gradient-signal);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+@utility bg-signal { background-image: var(--gradient-signal); }
+@utility shadow-glow { box-shadow: var(--shadow-glow); }
+@utility font-display { font-family: var(--font-display); }
+
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@utility animate-rise { animation: rise 0.6s cubic-bezier(.2,.7,.2,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+}
