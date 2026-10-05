@@ -77,7 +77,7 @@ const infoFor = (sender: string, sv: number, rcpt: string) => `bridgepro-v32|${s
 
 export async function encryptMessage(
   plaintext: string,
-  sender: { deviceId: string; keyVersion: number; privateKey: CryptoKey },
+  sender: { deviceId: string; keyVersion: number; privateKey: CryptoKey; publicKeyB64: string },
   recipients: Recipient[],
 ) {
   const contentKey = (await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"])) as CryptoKey;
