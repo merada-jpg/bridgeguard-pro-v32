@@ -548,6 +548,33 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
     });
     await channel.subscribe();
 
+    // A callee may join after the offer/candidates were already persisted.
+    // Replay the authorized signal history so the handshake is not race-dependent.
+    if (!initiator) {
+      const { data: history, error: historyError } = await supabase
+        .from("call_signals")
+        .select("sender_id,kind,payload")
+        .eq("call_id", callId)
+        .order("created_at", { ascending: true });
+      if (historyError) throw historyError;
+      for (const signal of history ?? []) {
+        if (signal.sender_id === user?.id) continue;
+        if (signal.kind === "offer") {
+          await pc.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
+        } else if (signal.kind === "candidate") {
+          if (pc.remoteDescription) await pc.addIceCandidate(signal.payload as RTCIceCandidateInit);
+          else pendingCandidates.current.push(signal.payload as RTCIceCandidateInit);
+        }
+      }
+      if (pc.remoteDescription) {
+        for (const candidate of pendingCandidates.current) await pc.addIceCandidate(candidate);
+        pendingCandidates.current = [];
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        await sendSignal(callId, "answer", answer);
+      }
+    }
+
     if (initiator) {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
