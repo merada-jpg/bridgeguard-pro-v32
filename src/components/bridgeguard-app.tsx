@@ -19,6 +19,7 @@ import {
   UserPlus,
   Video,
   Wifi,
+  type LucideIcon,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { safeError } from "@/lib/validation";
@@ -28,7 +29,7 @@ import { askAssistant } from "@/lib/ai.functions";
 import { exportMyData, deleteMyAccount, getIceServers } from "@/lib/account.functions";
 
 type Section = "home" | "messages" | "calls" | "security" | "privacy" | "ai";
-type User = { id: string; email?: string | null };
+type User = { id: string; email: string | null };
 type Profile = { id: string; display_name: string; handle: string };
 type Conversation = { id: string; title: string; created_by: string; created_at: string };
 type Device = {
@@ -136,7 +137,7 @@ function AuthScreen({ onGuest }: { onGuest: () => void }) {
               ["هوية الجهاز", "لا مفاتيح خاصة على الخادم", LockKeyhole],
               ["WebCrypto", "ECDH + HKDF + AES-GCM", KeyRound],
               ["RLS", "تفويض على مستوى البيانات", ShieldCheck],
-            ].map(([title, desc, Icon]) => (
+            ] as Array<[string, string, LucideIcon]>).map(([title, desc, Icon]) => (
               <Card key={String(title)} className="p-4">
                 <Icon className="size-5 text-primary" />
                 <div className="mt-3 font-bold">{String(title)}</div>
@@ -261,7 +262,7 @@ function Overview({ profile, device, guest, onSection }: { profile?: Profile | n
   );
 }
 
-function Messages({ user, device, guest }: { user?: User; device?: Device | null; guest: boolean }) {
+function Messages({ user, device, guest }: { user: User | undefined; device: Device | null; guest: boolean }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selected, setSelected] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -283,7 +284,7 @@ function Messages({ user, device, guest }: { user?: User; device?: Device | null
     if (!user || guest) return;
     const { data, error } = await supabase.from("messages").select("*").eq("conversation_id", conv.id).order("created_at", { ascending: true }).limit(200);
     if (error) return setStatus(safeError(error));
-    const rows = (data ?? []) as Message[];
+    const rows = (data ?? []).map((row) => ({ ...row, envelopes: row.envelopes as unknown as EnvelopeSet })) as Message[];
     const senderIds = [...new Set(rows.map((m) => m.sender_device_id))];
     const { data: devices } = senderIds.length ? await supabase.from("devices").select("id,public_identity_key").in("id", senderIds) : { data: [] as { id: string; public_identity_key: string }[] };
     const keys = new Map((devices ?? []).map((d) => [d.id, d.public_identity_key]));
@@ -349,7 +350,7 @@ function Messages({ user, device, guest }: { user?: User; device?: Device | null
       if (!localDevice) throw new Error("لا يوجد مفتاح محلي");
       const payload = await encryptMessage(
         text.trim(),
-        { deviceId: device.id, keyVersion: device.key_version, privateKey: localDevice.privateKey, publicKeyB64: localDevice.public_identity_key },
+        { deviceId: device.id, keyVersion: device.key_version, privateKey: localDevice.privateKey, publicKeyB64: localDevice.publicKeyB64 },
         recipients,
       );
       const { error } = await supabase.from("messages").insert({ conversation_id: selected.id, sender_id: user.id, sender_device_id: device.id, alg: "ECDH-P256+HKDF-SHA256+AES-256-GCM", ciphertext: payload.ciphertext, iv: payload.iv, envelopes: payload.envelopes });
@@ -395,7 +396,7 @@ function Messages({ user, device, guest }: { user?: User; device?: Device | null
   );
 }
 
-function Security({ user, device }: { user?: User; device?: Device | null }) {
+function Security({ user, device }: { user: User | undefined; device: Device | null }) {
   const [devices, setDevices] = useState<Device[]>([]);
   const [status, setStatus] = useState("");
   const [turn, setTurn] = useState<boolean | null>(null);
@@ -406,7 +407,7 @@ function Security({ user, device }: { user?: User; device?: Device | null }) {
     if (!error) setDevices(data ?? []);
     else setStatus(safeError(error));
     const ice = await getIceServers();
-    if (ice.ok) setTurn(ice.turnConfigured);
+    setTurn(ice.turnConfigured);
   }
   useEffect(() => { void load(); }, [user?.id]);
 
@@ -447,7 +448,7 @@ function Calls() {
   </div>;
 }
 
-function Privacy() {
+function Privacy({ user: _user }: { user: User | undefined }) {
   const [status, setStatus] = useState("");
   const [confirm, setConfirm] = useState("");
   async function exportData() {
@@ -517,9 +518,9 @@ export default function BridgeGuardApp() {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => hydrate(data.session?.user ? { id: data.session.user.id, email: data.session.user.email } : null)).finally(() => setBooting(false));
+    supabase.auth.getSession().then(({ data }) => hydrate(data.session?.user ? { id: data.session.user.id, email: data.session.user.email ?? null } : null)).finally(() => setBooting(false));
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      void hydrate(session?.user ? { id: session.user.id, email: session.user.email } : null);
+      void hydrate(session?.user ? { id: session.user.id, email: session.user.email ?? null } : null);
     });
     return () => listener.subscription.unsubscribe();
   }, []);
