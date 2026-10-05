@@ -453,6 +453,8 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
   const streamRef = useRef<MediaStream | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const pendingCandidates = useRef<RTCIceCandidateInit[]>([]);
+  const activeCallRef = useRef<string | null>(null);
+  const disconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function load() {
     if (!user || guest) return;
@@ -470,8 +472,15 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
     return r.servers as RTCIceServer[];
   }
 
-  async function cleanup(finalize = true) {
-    const callId = activeCall;
+  async function cleanup(finalize = true, callIdOverride?: string, sendHangup = false) {
+    const callId = callIdOverride ?? activeCallRef.current ?? activeCall;
+    if (disconnectTimerRef.current) {
+      clearTimeout(disconnectTimerRef.current);
+      disconnectTimerRef.current = null;
+    }
+    if (sendHangup && callId && user) {
+      try { await sendSignal(callId, "hangup", {}); } catch { /* call may already be closed */ }
+    }
     const channel = channelRef.current;
     if (channel) await supabase.removeChannel(channel);
     channelRef.current = null;
@@ -480,6 +489,7 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     pendingCandidates.current = [];
+    activeCallRef.current = null;
     setActiveCall(null);
     setCallState("idle");
     if (finalize && callId) {
@@ -493,12 +503,34 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
     if (error) throw error;
   }
 
+  async function detectRoute(pc: RTCPeerConnection) {
+    try {
+      const stats = await pc.getStats();
+      let selectedPair: RTCStats | undefined;
+      stats.forEach((report) => {
+        if (report.type === "candidate-pair" && (report as RTCIceCandidatePairStats).state === "succeeded" && (report as RTCIceCandidatePairStats).nominated) {
+          selectedPair = report;
+        }
+      });
+      if (!selectedPair) return;
+      const pair = selectedPair as RTCIceCandidatePairStats;
+      const local = stats.get(pair.localCandidateId) as RTCIceCandidateStats | undefined;
+      const remote = stats.get(pair.remoteCandidateId) as RTCIceCandidateStats | undefined;
+      if (local?.candidateType === "relay" || remote?.candidateType === "relay") setRoute("relay");
+      else if (local || remote) setRoute("p2p");
+    } catch {
+      setRoute("unknown");
+    }
+  }
+
   async function setupPeer(callId: string, initiator: boolean) {
     const servers = await iceServers();
     const pc = new RTCPeerConnection({ iceServers: servers });
     pcRef.current = pc;
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
     streamRef.current = stream;
+    const localVideo = document.getElementById("bridgeguard-local-video") as HTMLVideoElement | null;
+    if (localVideo) localVideo.srcObject = stream;
     for (const track of stream.getTracks()) pc.addTrack(track, stream);
     pc.onicecandidate = (event) => {
       if (event.candidate) void sendSignal(callId, "candidate", event.candidate.toJSON());
@@ -506,13 +538,27 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
     pc.onconnectionstatechange = () => {
       const state = pc.connectionState;
       setCallState(state);
-      if (state === "connected") void supabase.rpc("update_call_status", { _call: callId, _status: "active" });
-      if (["failed", "closed", "disconnected"].includes(state)) void cleanup(true);
+      if (state === "connected") {
+        setRoute("unknown");
+        void supabase.rpc("update_call_status", { _call: callId, _status: "active" });
+        void detectRoute(pc);
+      }
+      if (["failed", "closed"].includes(state)) void cleanup(true, callId);
+      if (state === "disconnected") {
+        if (disconnectTimerRef.current) clearTimeout(disconnectTimerRef.current);
+        disconnectTimerRef.current = setTimeout(() => {
+          if (pc.connectionState === "disconnected") void cleanup(true, callId);
+        }, 8000);
+      }
     };
     pc.ontrack = (event) => {
+      if (!event.streams[0]) return;
+      const video = document.getElementById("bridgeguard-remote-video") as HTMLVideoElement | null;
       const audio = document.getElementById("bridgeguard-remote-audio") as HTMLAudioElement | null;
-      if (audio && event.streams[0]) audio.srcObject = event.streams[0];
+      if (video) video.srcObject = event.streams[0];
+      if (audio) audio.srcObject = event.streams[0];
     };
+    activeCallRef.current = callId;
     setActiveCall(callId);
     setCallState("connecting");
 
@@ -527,7 +573,7 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
       const signal = payload.new as { sender_id: string; kind: string; payload: RTCSessionDescriptionInit & RTCIceCandidateInit };
       if (signal.sender_id === user?.id || !pcRef.current) return;
       try {
-        if (signal.kind === "offer" && !initiator) {
+        if (signal.kind === "offer" && !initiator && !pc.currentRemoteDescription) {
           await pc.setRemoteDescription(signal.payload as RTCSessionDescriptionInit);
           for (const candidate of pendingCandidates.current) await pc.addIceCandidate(candidate);
           pendingCandidates.current = [];
@@ -624,7 +670,7 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
           {conversations.map((c) => <option key={c.id} value={c.id}>{c.title}</option>)}
         </select>
         <Button onClick={() => void startCall()} disabled={!selected || Boolean(activeCall)} className="mt-4 w-full bg-primary text-primary-foreground"><Video className="size-4" /> بدء المكالمة</Button>
-        {activeCall && <Button onClick={() => void cleanup(true)} className="mt-2 w-full border bg-background text-destructive">إنهاء المكالمة</Button>}
+        {activeCall && <Button onClick={() => void cleanup(true, undefined, true)} className="mt-2 w-full border bg-background text-destructive">إنهاء المكالمة</Button>}
         <div className="mt-4 rounded-2xl bg-muted p-4 text-sm">
           <div className="flex justify-between"><span>الحالة</span><strong>{callState}</strong></div>
           <div className="mt-2 flex justify-between"><span>المسار المعلن</span><strong>{route}</strong></div>
@@ -640,6 +686,10 @@ function Calls({ user, guest }: { user: User | undefined; guest: boolean }) {
           {!calls.length && <p className="text-sm text-muted-foreground">لا توجد مكالمات جارية.</p>}
         </div>
       </Card>
+    </div>
+    <div className="grid gap-3 sm:grid-cols-2">
+      <video id="bridgeguard-local-video" autoPlay playsInline muted className="aspect-video w-full rounded-2xl bg-black object-cover" />
+      <video id="bridgeguard-remote-video" autoPlay playsInline className="aspect-video w-full rounded-2xl bg-black object-cover" />
     </div>
     <audio id="bridgeguard-remote-audio" autoPlay playsInline className="hidden" />
     {status && <div className="rounded-xl bg-warning/10 p-3 text-sm text-warning">{status}</div>}
